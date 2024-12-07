@@ -20,22 +20,23 @@ export function activate(context: vscode.ExtensionContext) {
 		  }
 		);
   
+		// Restore previous state
 		const notes = context.globalState.get('notes', []) as any[];
 		const checklist = context.globalState.get('checklist', []) as any[];
-  
+	
 		currentPanel.webview.html = getWebviewContent({ notes, checklist });
-  
-		// When the panel is closed, reset the reference
-		currentPanel.onDidDispose(() => {
-		  currentPanel = undefined;
-		});
-  
+	
 		// Handle messages from the webview
 		currentPanel.webview.onDidReceiveMessage((message) => {
 		  if (message.command === 'saveNotes') {
 			context.globalState.update('notes', message.notes);
 			context.globalState.update('checklist', message.checklist);
 		  }
+		});
+
+		// Clean up when the panel is closed by the user
+		currentPanel.onDidDispose(() => {
+			currentPanel = undefined;
 		});
 	  }
 	});
