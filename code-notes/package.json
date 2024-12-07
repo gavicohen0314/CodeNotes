@@ -14,8 +14,14 @@
   "contributes": {
     "commands": [
       {
-        "command": "code-notes.helloWorld",
+        "command": "code-notes.openNotesPanel",
         "title": "Hello World"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "code-notes.openNotesPanel",
+        "key": "ctrl+shift+n"
       }
     ]
   },
