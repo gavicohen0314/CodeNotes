@@ -15,19 +15,17 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
       }
       .container {
         display: flex;
-        flex-direction: row;
+        flex-direction: column;
         height: 100vh;
         box-sizing: border-box;
       }
       .section {
-        flex: 1;
-        border-right: 1px solid #ddd;
         padding: 20px;
         box-sizing: border-box;
         overflow-y: auto;
       }
-      .section:last-child {
-        border-right: none;
+      .section:not(:first-child) {
+        border-top: 1px solid #ddd;
       }
       h1 {
         margin-top: 0;
@@ -51,7 +49,6 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
         opacity: 0.6;
       }
 
-      /* Content area for text and checkbox */
       .content {
         display: flex;
         align-items: flex-start;
@@ -64,16 +61,11 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
         margin-left: 5px;
       }
 
-      /* Actions area for edit/delete buttons */
       .actions {
         display: flex;
         align-items: center;
         flex-shrink: 0;
         white-space: nowrap;
-      }
-
-      li input[type="checkbox"] {
-        margin-top: 2px;
       }
 
       li button {
@@ -133,24 +125,41 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
         align-items: center;
         flex: 1;
       }
-      .edit-container input[type="text"] {
-        flex: 1;
+      .edit-container input[type="text"], .edit-container input[type="number"] {
         padding: 3px;
+        margin-right: 5px;
+      }
+      .file-section {
+        margin-top: 20px;
+      }
+      .file-section h2 {
+        margin-top: 0;
+      }
+      .line-label {
+        font-weight: bold;
         margin-right: 5px;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="section" id="notes-section">
-        <h1>Notes</h1>
-        <ul id="notes"></ul>
+      <!-- My Notes (no file/line association) -->
+      <div class="section" id="my-notes-section">
+        <h1>My Notes</h1>
+        <ul id="myNotes"></ul>
         <div class="add-note">
-          <input type="text" id="newNote" placeholder="Type a new note..."/>
-          <button id="addNoteBtn">Add</button>
+          <input type="text" id="newMyNote" placeholder="Type a new personal note..."/>
+          <button id="addMyNoteBtn">Add</button>
         </div>
       </div>
 
+      <!-- File-based Notes -->
+      <div class="section" id="notes-section">
+        <h1>File Notes</h1>
+        <div id="fileNotesContainer"></div>
+      </div>
+
+      <!-- Checklist -->
       <div class="section" id="checklist-section">
         <h1>Checklist</h1>
         <ul id="checklist"></ul>
@@ -168,25 +177,24 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
       const vscode = acquireVsCodeApi();
       let { notes, checklist } = ${initialData};
 
-      const notesList = document.getElementById('notes');
+      const myNotesList = document.getElementById('myNotes');
+      const fileNotesContainer = document.getElementById('fileNotesContainer');
       const checklistList = document.getElementById('checklist');
 
-      const addNoteBtn = document.getElementById('addNoteBtn');
-      const newNoteInput = document.getElementById('newNote');
+      const addMyNoteBtn = document.getElementById('addMyNoteBtn');
+      const newMyNoteInput = document.getElementById('newMyNote');
 
       const addChecklistBtn = document.getElementById('addChecklistBtn');
       const newChecklistInput = document.getElementById('newChecklistItem');
       const clearCompletedBtn = document.getElementById('clearCompletedBtn');
 
-      renderNotes();
-      renderChecklist();
-
-      addNoteBtn.addEventListener('click', () => {
-        const text = newNoteInput.value.trim();
+      addMyNoteBtn.addEventListener('click', () => {
+        const text = newMyNoteInput.value.trim();
         if (text) {
+          // My Notes have no file/line
           notes.push({ text });
-          newNoteInput.value = '';
-          renderNotes();
+          newMyNoteInput.value = '';
+          renderAll();
           saveAll();
         }
       });
@@ -207,78 +215,38 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
         saveAll();
       });
 
-      notesList.addEventListener('click', handleNotesClick);
+      myNotesList.addEventListener('click', handleMyNotesClick);
+      fileNotesContainer.addEventListener('click', handleFileNotesClick);
       checklistList.addEventListener('click', handleChecklistClick);
       checklistList.addEventListener('change', handleChecklistChange);
 
-      function handleNotesClick(event) {
-        const target = event.target;
-        const li = target.closest('li');
-        if (!li) return;
-
-        const index = parseInt(li.dataset.index, 10);
-
-        if (target.classList.contains('edit-btn')) {
-          startEditingNote(li, index);
-        } else if (target.classList.contains('delete-btn')) {
-          notes.splice(index, 1);
-          renderNotes();
-          saveAll();
-        } else if (target.classList.contains('save-btn')) {
-          const input = li.querySelector('input[type="text"]');
-          const newText = input.value.trim();
-          if (newText) {
-            notes[index].text = newText;
-          }
-          renderNotes();
-          saveAll();
-        } else if (target.classList.contains('cancel-btn')) {
-          renderNotes();
+      window.addEventListener('message', event => {
+        const message = event.data;
+        if (message.command === 'updateData') {
+          notes = message.notes;
+          checklist = message.checklist;
+          renderAll();
         }
+      });
+
+      renderAll();
+
+      function renderAll() {
+        renderMyNotes();
+        renderFileNotes();
+        renderChecklist();
       }
 
-      function handleChecklistClick(event) {
-        const target = event.target;
-        const li = target.closest('li');
-        if (!li) return;
+      function renderMyNotes() {
+        myNotesList.innerHTML = '';
+        // My Notes are those without file/line
+        const myNotes = notes.filter(n => !n.file && !n.line);
+        myNotes.forEach((note, indexInMyNotes) => {
+          // Need global index to manage edits/deletions
+          const globalIndex = notes.indexOf(note);
 
-        const index = parseInt(li.dataset.index, 10);
-
-        if (target.classList.contains('edit-btn')) {
-          startEditingChecklistItem(li, index);
-        } else if (target.classList.contains('delete-btn')) {
-          checklist.splice(index, 1);
-          renderChecklist();
-          saveAll();
-        } else if (target.classList.contains('save-btn')) {
-          const input = li.querySelector('input[type="text"]');
-          const newText = input.value.trim();
-          if (newText) {
-            checklist[index].text = newText;
-          }
-          renderChecklist();
-          saveAll();
-        } else if (target.classList.contains('cancel-btn')) {
-          renderChecklist();
-        }
-      }
-
-      function handleChecklistChange(event) {
-        const target = event.target;
-        if (target.type === 'checkbox') {
-          const li = target.closest('li');
-          const index = parseInt(li.dataset.index, 10);
-          checklist[index].checked = target.checked;
-          renderChecklist();
-          saveAll();
-        }
-      }
-
-      function renderNotes() {
-        notesList.innerHTML = '';
-        notes.forEach((note, index) => {
           const li = document.createElement('li');
-          li.dataset.index = index;
+          li.dataset.index = globalIndex;
 
           const contentDiv = document.createElement('div');
           contentDiv.className = 'content';
@@ -303,8 +271,76 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
 
           li.appendChild(contentDiv);
           li.appendChild(actionsDiv);
-          notesList.appendChild(li);
+          myNotesList.appendChild(li);
         });
+      }
+
+      function renderFileNotes() {
+        fileNotesContainer.innerHTML = '';
+
+        // File notes have file and line
+        const fileNotes = notes.filter(n => n.file && typeof n.line === 'number');
+        const notesByFile = {};
+        fileNotes.forEach((note) => {
+          if (!notesByFile[note.file]) {
+            notesByFile[note.file] = [];
+          }
+          notesByFile[note.file].push(note);
+        });
+
+        for (const file in notesByFile) {
+          const fileSection = document.createElement('div');
+          fileSection.className = 'file-section';
+
+          const fileHeading = document.createElement('h2');
+          fileHeading.textContent = file;
+          fileSection.appendChild(fileHeading);
+
+          const ul = document.createElement('ul');
+          notesByFile[file].forEach((note) => {
+            const globalIndex = notes.indexOf(note);
+
+            const li = document.createElement('li');
+            li.dataset.index = globalIndex.toString();
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'content';
+
+            const actionsDiv = document.createElement('div');
+            actionsDiv.className = 'actions';
+
+            const lineSpan = document.createElement('span');
+            lineSpan.innerHTML = '<span class="line-label">Line:</span> ' + note.line;
+
+            const textSpan = document.createElement('span');
+            textSpan.textContent = note.text;
+
+            const editBtn = document.createElement('button');
+            editBtn.textContent = 'Edit';
+            editBtn.className = 'edit-btn';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = 'Delete';
+            deleteBtn.className = 'delete-btn';
+
+            const goToLineBtn = document.createElement('button');
+            goToLineBtn.textContent = 'Go to Line';
+            goToLineBtn.className = 'goto-line-btn';
+
+            contentDiv.appendChild(lineSpan);
+            contentDiv.appendChild(textSpan);
+            actionsDiv.appendChild(editBtn);
+            actionsDiv.appendChild(deleteBtn);
+            actionsDiv.appendChild(goToLineBtn);
+
+            li.appendChild(contentDiv);
+            li.appendChild(actionsDiv);
+            ul.appendChild(li);
+          });
+
+          fileSection.appendChild(ul);
+          fileNotesContainer.appendChild(fileSection);
+        }
       }
 
       function renderChecklist() {
@@ -347,15 +383,41 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
         });
       }
 
-      function startEditingNote(li, index) {
+      // Handling my notes (no file/line)
+      function handleMyNotesClick(event) {
+        const target = event.target;
+        const li = target.closest('li');
+        if (!li) return;
+        const index = parseInt(li.dataset.index, 10);
+
+        if (target.classList.contains('edit-btn')) {
+          startEditingMyNote(li, index);
+        } else if (target.classList.contains('delete-btn')) {
+          notes.splice(index, 1);
+          renderAll();
+          saveAll();
+        } else if (target.classList.contains('save-btn')) {
+          const input = li.querySelector('input[type="text"]');
+          const newText = input.value.trim();
+          if (newText) {
+            notes[index].text = newText;
+          }
+          renderAll();
+          saveAll();
+        } else if (target.classList.contains('cancel-btn')) {
+          renderAll();
+        }
+      }
+
+      function startEditingMyNote(li, index) {
         const note = notes[index];
         li.innerHTML = '';
         const editContainer = document.createElement('div');
         editContainer.className = 'edit-container';
 
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = note.text;
+        const textInput = document.createElement('input');
+        textInput.type = 'text';
+        textInput.value = note.text;
 
         const saveBtn = document.createElement('button');
         saveBtn.textContent = 'Save';
@@ -365,10 +427,105 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
         cancelBtn.textContent = 'Cancel';
         cancelBtn.className = 'cancel-btn';
 
-        editContainer.appendChild(input);
+        editContainer.appendChild(textInput);
         editContainer.appendChild(saveBtn);
         editContainer.appendChild(cancelBtn);
         li.appendChild(editContainer);
+      }
+
+      // Handling file notes
+      function handleFileNotesClick(event) {
+        const target = event.target;
+        const li = target.closest('li');
+        if (!li) return;
+        const index = parseInt(li.dataset.index, 10);
+        const note = notes[index];
+
+        if (target.classList.contains('edit-btn')) {
+          startEditingFileNote(li, index);
+        } else if (target.classList.contains('delete-btn')) {
+          notes.splice(index, 1);
+          renderAll();
+          saveAll();
+        } else if (target.classList.contains('save-btn')) {
+          const textInput = li.querySelector('input[type="text"]');
+          const newText = textInput.value.trim();
+          if (newText) {
+            notes[index].text = newText;
+            // File and line are not editable now, so leave them as is
+          }
+          renderAll();
+          saveAll();
+        } else if (target.classList.contains('cancel-btn')) {
+          renderAll();
+        } else if (target.classList.contains('goto-line-btn')) {
+          if (note && note.file && note.line) {
+            vscode.postMessage({ command: 'goToLine', file: note.file, line: note.line });
+          }
+        }
+      }
+
+      function startEditingFileNote(li, index) {
+        const note = notes[index];
+        li.innerHTML = '';
+        const editContainer = document.createElement('div');
+        editContainer.className = 'edit-container';
+
+        // We do NOT allow editing file/line now, only text
+        const textInput = document.createElement('input');
+        textInput.type = 'text';
+        textInput.value = note.text;
+
+        const saveBtn = document.createElement('button');
+        saveBtn.textContent = 'Save';
+        saveBtn.className = 'save-btn';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.className = 'cancel-btn';
+
+        editContainer.appendChild(textInput);
+        editContainer.appendChild(saveBtn);
+        editContainer.appendChild(cancelBtn);
+        li.appendChild(editContainer);
+      }
+
+      // Handling checklist
+      function handleChecklistClick(event) {
+        const target = event.target;
+        const li = target.closest('li');
+        if (!li) return;
+
+        const index = parseInt(li.dataset.index, 10);
+
+        if (target.classList.contains('edit-btn')) {
+          startEditingChecklistItem(li, index);
+        } else if (target.classList.contains('delete-btn')) {
+          checklist.splice(index, 1);
+          renderChecklist();
+          saveAll();
+        } else if (target.classList.contains('save-btn')) {
+          const input = li.querySelector('input[type="text"]');
+          const newText = input.value.trim();
+          if (newText) {
+            checklist[index].text = newText;
+          }
+          renderChecklist();
+          saveAll();
+        } else if (target.classList.contains('cancel-btn')) {
+          renderChecklist();
+        }
+      }
+
+      function handleChecklistChange(event) {
+        const target = event.target;
+        if (target.type === 'checkbox') {
+          const li = target.closest('li');
+          const index = parseInt(li.dataset.index, 10);
+          checklist[index].checked = target.checked;
+          renderChecklist();
+          saveAll();
+        }
       }
 
       function startEditingChecklistItem(li, index) {
@@ -380,7 +537,7 @@ export function getWebviewContent(data: { notes: any[], checklist: any[] }): str
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.checked = item.checked;
-        checkbox.disabled = true; // disabled during text edit
+        checkbox.disabled = true;
 
         const input = document.createElement('input');
         input.type = 'text';

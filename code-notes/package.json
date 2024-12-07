@@ -16,12 +16,20 @@
       {
         "command": "code-notes.openNotesPanel",
         "title": "Hello World"
+      },
+      {
+        "command": "code-notes.addFileNote",
+        "title": "Add File Note"
       }
     ],
     "keybindings": [
       {
         "command": "code-notes.openNotesPanel",
         "key": "ctrl+shift+n"
+      },
+      {
+        "command": "code-notes.addFileNote",
+        "key": "ctrl+l"
       }
     ]
   },
